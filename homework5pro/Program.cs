@@ -1,16 +1,16 @@
-﻿using System;
+using System;
 
-class Play
+class Play : IDisposable
 {
     public string Title { get; set; }
-    public string Author { get; set; }
+    public string AuthorFullName { get; set; }
     public string Genre { get; set; }
     public int Year { get; set; }
 
-    public Play(string title, string author, string genre, int year)
+    public Play(string title, string authorFullName, string genre, int year)
     {
         Title = title;
-        Author = author;
+        AuthorFullName = authorFullName;
         Genre = genre;
         Year = year;
     }
@@ -18,14 +18,21 @@ class Play
     public void DisplayInformation()
     {
         Console.WriteLine($"Title: {Title}");
-        Console.WriteLine($"Author: {Author}");
+        Console.WriteLine($"Author: {AuthorFullName}");
         Console.WriteLine($"Genre: {Genre}");
         Console.WriteLine($"Year: {Year}");
     }
 
+    public void Dispose()
+    {
+        Console.WriteLine($"Disposing resources for the play: {Title}");
+        
+    }
+
     ~Play()
     {
-        Console.WriteLine($"Object {Title} destroyed");
+        Console.WriteLine($"Destructing the play object: {Title}");
+        Dispose();
     }
 }
 
@@ -33,9 +40,10 @@ class Program
 {
     static void Main()
     {
-        Play myPlay = new Play("Titanic", "James Cameron", "Drama", 1997);
-        myPlay.DisplayInformation();
-
-        Console.ReadLine();
+        using (Play hamlet = new Play("Hamlet", "William Shakespeare", "Tragedy", 1603))
+        {
+            hamlet.DisplayInformation();
+            
+        }  
     }
 }
