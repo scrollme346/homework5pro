@@ -63,19 +63,15 @@ def cmd_download(args):
     return 0
 
 
-def cmd_transcribe(args):
-    from faster_whisper import WhisperModel
+GPU_ERRORS = ("cublas", "cudnn", "cuda", "cufft", "curand", "nvrtc")
 
-    target = model_dir(args.models_dir, args.model)
-    if not has_model(target):
-        emit({"type": "error", "code": "model-missing", "message": "Speech model is not downloaded yet."})
-        return 4
-    threads = max(1, (os.cpu_count() or 4) - 1)
-    try:
-        model = WhisperModel(target, device=args.device, compute_type=args.compute_type, cpu_threads=threads)
-    except Exception:
-        model = WhisperModel(target, device="cpu", compute_type="int8", cpu_threads=threads)
-    language = None if args.language in (None, "", "auto") else args.language
+
+def is_gpu_error(e):
+    msg = str(e).lower()
+    return any(k in msg for k in GPU_ERRORS)
+
+
+def run_transcription(model, args, language):
     segments, info = model.transcribe(
         args.audio,
         language=language,
@@ -87,6 +83,7 @@ def cmd_transcribe(args):
     duration = float(info.duration or 0) or 1.0
     words = []
     texts = []
+    # segments is a generator: GPU library errors can surface here, so collect fully before emitting the result.
     for seg in segments:
         texts.append(seg.text.strip())
         for w in seg.words or []:
@@ -97,6 +94,33 @@ def cmd_transcribe(args):
                 "probability": round(float(w.probability), 3),
             })
         emit({"type": "progress", "value": min(1.0, float(seg.end) / duration)})
+    return info, duration, words, texts
+
+
+def cmd_transcribe(args):
+    from faster_whisper import WhisperModel
+
+    target = model_dir(args.models_dir, args.model)
+    if not has_model(target):
+        emit({"type": "error", "code": "model-missing", "message": "Speech model is not downloaded yet."})
+        return 4
+    threads = max(1, (os.cpu_count() or 4) - 1)
+    language = None if args.language in (None, "", "auto") else args.language
+
+    def cpu_model():
+        return WhisperModel(target, device="cpu", compute_type="int8", cpu_threads=threads)
+
+    try:
+        model = WhisperModel(target, device=args.device, compute_type=args.compute_type, cpu_threads=threads)
+        result = run_transcription(model, args, language)
+    except Exception as e:
+        # A GPU is present but CUDA libraries are not (typical on Windows): fall back to the CPU.
+        if args.device == "cpu" or not is_gpu_error(e):
+            raise
+        emit({"type": "progress", "value": 0.0})
+        result = run_transcription(cpu_model(), args, language)
+
+    info, duration, words, texts = result
     emit({
         "type": "result",
         "language": info.language,

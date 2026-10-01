@@ -1,7 +1,7 @@
 {
   "name": "local-reel-editor",
   "productName": "Local Reel Editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local desktop app that turns a voice-over and labelled screen recordings into a polished vertical Reel.",
   "main": "out/main/index.js",
   "license": "MIT",
