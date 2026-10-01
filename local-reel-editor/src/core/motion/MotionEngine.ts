@@ -1,5 +1,5 @@
 import type { ClipActivity, FitMode, MediaProbe, Point, Segment } from '../model/types';
-import { clamp, easeInOut, lerp } from '../util/math';
+import { clamp, ease, lerp } from '../util/math';
 
 export const FRAME_W = 1080;
 export const FRAME_H = 1920;
@@ -39,9 +39,12 @@ export function viewportFor(scale: number, focus: Point): Viewport {
 }
 
 /** Viewport of a segment at timeline time `t`. Shared by preview and renderer. */
-export function viewportAt(seg: Pick<Segment, 'startTime' | 'endTime' | 'scaleStart' | 'scaleEnd' | 'positionStart' | 'positionEnd'>, t: number): Viewport {
+export function viewportAt(
+  seg: Pick<Segment, 'startTime' | 'endTime' | 'scaleStart' | 'scaleEnd' | 'positionStart' | 'positionEnd' | 'ease'>,
+  t: number,
+): Viewport {
   const dur = Math.max(1e-6, seg.endTime - seg.startTime);
-  const p = easeInOut((t - seg.startTime) / dur);
+  const p = ease(seg.ease ?? 'inOut', (t - seg.startTime) / dur);
   return viewportFor(lerp(seg.scaleStart, seg.scaleEnd, p), {
     x: lerp(seg.positionStart.x, seg.positionEnd.x, p),
     y: lerp(seg.positionStart.y, seg.positionEnd.y, p),

@@ -85,7 +85,8 @@ export function checkTimeline(
   // Transition density.
   let lastTr = -Infinity;
   for (const s of segs) {
-    if (s.transitionOut.kind === 'cut') continue;
+    // Short soft dissolves (jump cuts inside a topic) do not count as "transitions" here.
+    if (s.transitionOut.kind === 'cut' || (s.transitionOut.kind === 'dissolve' && s.transitionOut.duration < 0.4)) continue;
     if (s.endTime - lastTr < preset.transitionMinGap * 0.6) {
       issues.push({ code: 'transition-density', severity: 'warning', message: 'Переходы стоят слишком часто.', time: s.endTime });
     }

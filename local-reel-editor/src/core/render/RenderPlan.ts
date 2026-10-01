@@ -1,4 +1,4 @@
-import type { ClipAsset, Project, Segment, TransitionKind } from '../model/types';
+import type { ClipAsset, Ease, Project, Segment, TransitionKind } from '../model/types';
 import { FRAME_H, FRAME_W } from '../motion/MotionEngine';
 import { captionsToAss } from '../captions/CaptionEngine';
 
@@ -35,12 +35,34 @@ export interface RenderPlanOptions {
   fontsDir: string;
 }
 
-const XFADE: Record<Exclude<TransitionKind, 'cut'>, string> = {
-  dissolve: 'fade',
-  'slide-left': 'slideleft',
-  'slide-up': 'slideup',
-  zoom: 'zoomin',
-};
+/** Eased transition progress 0→1 (xfade's P runs 1→0). Matches TRANSITION_EASE in the preview. */
+const XE = '((1-cos(PI*(1-P)))/2)';
+
+/** Samples plane-correct pixel of input `src` ('a' or 'b') at (x, y). */
+const samp = (src: 'a' | 'b', x: string, y: string): string =>
+  `if(eq(PLANE,0),${src}0(${x},${y}),if(eq(PLANE,1),${src}1(${x},${y}),${src}2(${x},${y})))`;
+
+/**
+ * xfade parameters per transition. Dissolve uses the fast built-in fade;
+ * slides and the zoom-through use custom expressions with sine easing so
+ * they start and land softly instead of moving at constant speed.
+ */
+export function xfadeTransition(kind: Exclude<TransitionKind, 'cut'>): string {
+  switch (kind) {
+    case 'slide-left':
+      return `custom:expr='st(1,W*(1-${XE}));if(gte(X,ld(1)),${samp('b', 'X-ld(1)', 'Y')},${samp('a', 'X+W-ld(1)', 'Y')})'`;
+    case 'slide-up':
+      return `custom:expr='st(1,H*(1-${XE}));if(gte(Y,ld(1)),${samp('b', 'X', 'Y-ld(1)')},${samp('a', 'X', 'Y+H-ld(1)')})'`;
+    case 'zoom':
+      // A pushes in and fades out while B settles from 112% to 100%.
+      return (
+        `custom:expr='st(0,${XE});st(1,1+0.3*ld(0));st(2,1.12-0.12*ld(0));` +
+        `${samp('a', 'W/2+(X-W/2)/ld(1)', 'H/2+(Y-H/2)/ld(1)')}*(1-ld(0))+${samp('b', 'W/2+(X-W/2)/ld(2)', 'H/2+(Y-H/2)/ld(2)')}*ld(0)'`
+      );
+    default:
+      return 'fade';
+  }
+}
 
 /** User SFX are stored as absolute paths; built-in ones relative to the library root. */
 export const isAbsolutePath = (p: string): boolean => p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith('\\\\');
@@ -54,9 +76,18 @@ export function segmentFrames(seg: Pick<Segment, 'startTime' | 'endTime'>, fps: 
   return { start, count: Math.max(1, end - start) };
 }
 
-/** Same cubic ease-in-out as the preview, as an FFmpeg expression of `p`. */
-function easeExpr(p: string): string {
-  return `if(lt(${p},0.5),4*${p}*${p}*${p},1-pow(-2*${p}+2,3)/2)`;
+/** Same sine easings as the preview (util/math ease), as FFmpeg expressions of `p`. */
+function easeExpr(kind: Ease, p: string): string {
+  switch (kind) {
+    case 'linear':
+      return `(${p})`;
+    case 'in':
+      return `(1-cos(PI*(${p})/2))`;
+    case 'out':
+      return `sin(PI*(${p})/2)`;
+    default:
+      return `((1-cos(PI*(${p})))/2)`;
+  }
 }
 
 function composeFilter(clip: ClipAsset): string {
@@ -89,7 +120,7 @@ function motionFilter(seg: Segment, frames: number): string {
   }
   const denom = Math.max(1, frames - 1);
   const p = `min(1,on/${denom})`;
-  const e = easeExpr(p);
+  const e = easeExpr(seg.ease ?? 'inOut', p);
   const z = `${n4(s0)}+(${n4(s1 - s0)})*${e}`;
   const fx = `(${n4(p0.x)}+(${n4(p1.x - p0.x)})*${e})`;
   const fy = `(${n4(p0.y)}+(${n4(p1.y - p0.y)})*${e})`;
@@ -181,7 +212,7 @@ export function buildFinalJob(project: Project, opts: RenderPlanOptions): Ffmpeg
     } else {
       const startFrame = segmentFrames(segs[i], fps).start;
       const d = Math.round(tr.duration * fps) / fps;
-      parts.push(`${prev}[n${i}]xfade=transition=${XFADE[tr.kind]}:duration=${n4(d)}:offset=${n4(startFrame / fps)},settb=1/${fps}${out}`);
+      parts.push(`${prev}[n${i}]xfade=transition=${xfadeTransition(tr.kind)}:duration=${n4(d)}:offset=${n4(startFrame / fps)},settb=1/${fps}${out}`);
     }
     prev = out;
   }

@@ -53,7 +53,7 @@ describe('MontagePlanner', () => {
     expect(avg('fast')).toBeLessThan(avg('dynamic'));
     expect(avg('dynamic')).toBeLessThan(avg('minimal'));
     expect(avg('dynamic')).toBeGreaterThanOrEqual(1);
-    expect(avg('dynamic')).toBeLessThanOrEqual(3.2);
+    expect(avg('dynamic')).toBeLessThanOrEqual(5);
   });
 
   it('keeps zoom gentle and never underfills the frame', () => {
@@ -67,11 +67,41 @@ describe('MontagePlanner', () => {
     }
   });
 
-  it('mostly uses hard cuts and spaces transitions out', () => {
+  it('uses a soft transition at every topic change', () => {
     const t = planMontage(input()).timeline;
-    const nonCut = t.segments.filter((s) => s.transitionOut.kind !== 'cut');
-    expect(nonCut.length).toBeLessThanOrEqual(Math.ceil(t.segments.length / 3));
-    for (let i = 1; i < nonCut.length; i++) expect(nonCut[i].endTime - nonCut[i - 1].endTime).toBeGreaterThanOrEqual(4.5);
+    for (let i = 0; i < t.segments.length - 1; i++) {
+      const a = t.segments[i];
+      const b = t.segments[i + 1];
+      if (a.sectionId !== b.sectionId) {
+        expect(a.transitionOut.kind).not.toBe('cut');
+        expect(a.transitionOut).toEqual(b.transitionIn);
+      }
+    }
+    // Eye-catching moves (slides / zoom) are spaced out.
+    const big = t.segments.filter((s) => ['slide-left', 'slide-up', 'zoom'].includes(s.transitionOut.kind));
+    for (let i = 1; i < big.length; i++) expect(big[i].endTime - big[i - 1].endTime).toBeGreaterThanOrEqual(5);
+  });
+
+  it('keeps camera motion continuous inside a topic (no zoom or speed jumps)', () => {
+    const slope = (kind: string | undefined, at: 0 | 1) => {
+      if (kind === 'linear') return 1;
+      if (kind === 'in') return at === 1 ? Math.PI / 2 : 0;
+      if (kind === 'out') return at === 0 ? Math.PI / 2 : 0;
+      return 0; // inOut
+    };
+    for (const style of ['minimal', 'dynamic', 'fast'] as const) {
+      const segs = planMontage(input(style)).timeline.segments;
+      for (let i = 0; i < segs.length - 1; i++) {
+        const a = segs[i];
+        const b = segs[i + 1];
+        if (a.sectionId !== b.sectionId) continue;
+        expect(b.scaleStart).toBeCloseTo(a.scaleEnd, 3);
+        expect(b.positionStart.x).toBeCloseTo(a.positionEnd.x, 3);
+        const va = ((a.scaleEnd - a.scaleStart) * slope(a.ease, 1)) / (a.endTime - a.startTime);
+        const vb = ((b.scaleEnd - b.scaleStart) * slope(b.ease, 0)) / (b.endTime - b.startTime);
+        expect(Math.abs(va - vb)).toBeLessThan(0.002);
+      }
+    }
   });
 
   it('places sparse, quiet SFX without immediate repeats', () => {

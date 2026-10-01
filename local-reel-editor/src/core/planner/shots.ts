@@ -1,7 +1,7 @@
-import type { ClipAsset, Point, Section, Segment, Word } from '../model/types';
+import type { ClipAsset, Ease, Point, Section, Segment, Word } from '../model/types';
 import type { StylePreset } from './presets';
 import { CUT_LEAD } from './presets';
-import { activityFocus, activityLevel, sourcePointToFrame } from '../motion/MotionEngine';
+import { activityFocus, sourcePointToFrame } from '../motion/MotionEngine';
 import { clamp, round3 } from '../util/math';
 import { seededId } from '../util/id';
 import type { Rng } from '../util/rng';
@@ -108,7 +108,25 @@ function focusFor(clip: ClipAsset, from: number, to: number): Point {
   return { x: round3(0.5 + (p.x - 0.5) * 0.7), y: round3(0.47 + (p.y - 0.47) * 0.7) };
 }
 
-/** Builds the shots for one section, including zoom/position motion. */
+/**
+ * Splits one continuous camera move over consecutive shots so that speed
+ * never jumps at a cut: first shot eases in, middle shots move linearly,
+ * last shot eases out (sine easings have slope π/2 at the joints).
+ * Returns the move fraction at every boundary (0 … 1) and the ease per shot.
+ */
+export function motionChain(durations: number[]): { at: number[]; ease: Ease[] } {
+  const n = durations.length;
+  if (n === 1) return { at: [0, 1], ease: ['inOut'] };
+  const k = 2 / Math.PI;
+  const weights = durations.map((d, i) => (i === 0 || i === n - 1 ? k * d : d));
+  const total = weights.reduce((a, b) => a + b, 0);
+  const at = [0];
+  for (const w of weights) at.push(at[at.length - 1] + w / total);
+  at[n] = 1;
+  return { at, ease: durations.map((_, i) => (i === 0 ? 'in' : i === n - 1 ? 'out' : 'linear')) };
+}
+
+/** Builds the shots for one section with one smooth, continuous camera move. */
 export function planSectionShots(
   section: Section,
   sectionIndex: number,
@@ -125,65 +143,26 @@ export function planSectionShots(
   const src = planSource(clip, cursor, durations, preset);
   const D = clip.probe.durationSec;
 
+  // One move per topic: gently push in towards where the UI is active,
+  // alternating with a slow pull back on the next topic for variety.
+  const sourceEndAll = Math.min(D, src.starts[src.starts.length - 1] + durations[durations.length - 1] * src.speed);
+  const target = focusFor(clip, src.starts[0], sourceEndAll);
+  const amount = round3(rng.range(preset.zoomMin, preset.zoomMax) - 1);
+  const pushIn = sectionIndex % 2 === 0 || rng.chance(0.3);
+  const s0 = pushIn ? 1 : round3(1 + amount);
+  const s1 = pushIn ? round3(1 + amount) : 1;
+  const p0 = pushIn ? DEFAULT_FOCUS : target;
+  const p1 = pushIn ? target : DEFAULT_FOCUS;
+  const chain = motionChain(durations);
+  const lerpPt = (a: Point, b: Point, t: number): Point => ({ x: round3(a.x + (b.x - a.x) * t), y: round3(a.y + (b.y - a.y) * t) });
+
   const segments: Segment[] = [];
-  let scale = 1;
-  let focus: Point = DEFAULT_FOCUS;
-  let staticFor = 0;
   for (let k = 0; k < durations.length; k++) {
     const d = durations[k];
     const sourceStart = src.starts[k];
     const sourceEnd = round3(Math.min(D, sourceStart + d * src.speed));
-    const target = focusFor(clip, sourceStart, sourceEnd);
-    const busy = activityLevel(clip.activity, sourceStart, sourceEnd);
-
-    let scaleStart = scale;
-    let scaleEnd = scale;
-    let posStart = focus;
-    let posEnd = focus;
-
-    const punch = () => round3(clamp(rng.range(1.07, preset.zoomMax), 1.04, 1.15));
-    const wantsMotion = rng.chance(preset.motionChance) || staticFor + d > preset.maxStatic;
-
-    if (k === 0) {
-      // New topic: open wide, or (sometimes) open slightly punched on the action.
-      if (sectionIndex > 0 && rng.chance(0.25) && busy > 0.01) {
-        scaleStart = scaleEnd = punch();
-        posStart = posEnd = target;
-      } else {
-        scaleStart = 1;
-        scaleEnd = wantsMotion ? round3(rng.range(1.03, 1.06)) : 1;
-        posStart = DEFAULT_FOCUS;
-        posEnd = wantsMotion ? target : DEFAULT_FOCUS;
-      }
-    } else if (src.jumps[k]) {
-      // Jump cut: change framing at the cut so the jump reads as intentional.
-      if (scale > 1.03) {
-        scaleStart = 1;
-        scaleEnd = wantsMotion ? round3(rng.range(1.02, 1.05)) : 1;
-        posStart = posEnd = target;
-      } else {
-        scaleStart = punch();
-        scaleEnd = wantsMotion ? round3(Math.min(preset.zoomMax + 0.02, scaleStart + 0.02)) : scaleStart;
-        posStart = posEnd = target;
-      }
-    } else if (wantsMotion) {
-      // Continuous footage: keep the screen alive with a smooth move.
-      if (scale < 1.04) {
-        scaleEnd = punch(); // smooth punch-in
-        posEnd = target;
-      } else if (rng.chance(0.5)) {
-        scaleEnd = round3(Math.min(preset.zoomMax + 0.02, scale + 0.02)); // slight reposition / focus
-        posEnd = target;
-      } else {
-        scaleEnd = 1; // ease back out
-        posEnd = DEFAULT_FOCUS;
-      }
-    }
-
-    const moving = Math.abs(scaleEnd - scaleStart) > 0.005 || Math.hypot(posEnd.x - posStart.x, posEnd.y - posStart.y) > 0.02;
-    const changedAtCut = k === 0 || src.jumps[k] || Math.abs(scaleStart - scale) > 0.005;
-    staticFor = moving ? 0 : changedAtCut ? d : staticFor + d;
-
+    const u0 = chain.at[k];
+    const u1 = chain.at[k + 1];
     segments.push({
       id: seededId('seg', firstSegmentIndex + k, seed),
       startTime: round3(bounds[k]),
@@ -195,10 +174,11 @@ export function planSectionShots(
       sourceClip: clip.id,
       sourceStart,
       sourceEnd,
-      scaleStart,
-      scaleEnd,
-      positionStart: posStart,
-      positionEnd: posEnd,
+      scaleStart: round3(s0 + (s1 - s0) * u0),
+      scaleEnd: round3(s0 + (s1 - s0) * u1),
+      positionStart: lerpPt(p0, p1, u0),
+      positionEnd: lerpPt(p0, p1, u1),
+      ease: chain.ease[k],
       transitionIn: CUT,
       transitionOut: CUT,
       sfx: [],
@@ -207,8 +187,6 @@ export function planSectionShots(
       candidates: section.candidates,
       speed: round3(src.speed),
     });
-    scale = scaleEnd;
-    focus = posEnd;
   }
   return { segments, cursor: src.consumedTo };
 }

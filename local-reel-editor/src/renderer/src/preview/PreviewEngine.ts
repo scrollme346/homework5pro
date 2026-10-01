@@ -2,6 +2,7 @@ import type { ClipAsset, Project, Segment, SfxEvent } from '@core/model/types';
 import { sourceRect, viewportAt } from '@core/motion/MotionEngine';
 import { CAPTION_Y, SAFE_ZONE, captionAt } from '@core/captions/CaptionEngine';
 import { isAbsolutePath } from '@core/render/RenderPlan';
+import { ease } from '@core/util/math';
 import { api } from '../api';
 
 const W = 540;
@@ -350,24 +351,28 @@ export class PreviewEngine {
       }
       const d = prev.transitionOut.duration;
       const q = Math.max(0, Math.min(1, (t - cur.startTime) / d));
+      // Same sine easing as the FFmpeg custom transitions (RenderPlan.xfadeTransition).
+      const e = ease('inOut', q);
       const ctx = this.ctx;
       ctx.save();
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, W, H);
       switch (prev.transitionOut.kind) {
         case 'slide-left':
-          ctx.drawImage(this.offB, -q * W, 0);
-          ctx.drawImage(this.off, (1 - q) * W, 0);
+          ctx.drawImage(this.offB, -e * W, 0);
+          ctx.drawImage(this.off, (1 - e) * W, 0);
           break;
         case 'slide-up':
-          ctx.drawImage(this.offB, 0, -q * H);
-          ctx.drawImage(this.off, 0, (1 - q) * H);
+          ctx.drawImage(this.offB, 0, -e * H);
+          ctx.drawImage(this.off, 0, (1 - e) * H);
           break;
         case 'zoom': {
-          ctx.drawImage(this.off, 0, 0);
-          ctx.globalAlpha = 1 - q;
-          const z = 1 + q;
-          ctx.drawImage(this.offB, (W - W * z) / 2, (H - H * z) / 2, W * z, H * z);
+          const za = 1 + 0.3 * e;
+          const zb = 1.12 - 0.12 * e;
+          ctx.globalAlpha = 1;
+          ctx.drawImage(this.offB, (W - W * za) / 2, (H - H * za) / 2, W * za, H * za);
+          ctx.globalAlpha = e;
+          ctx.drawImage(this.off, (W - W * zb) / 2, (H - H * zb) / 2, W * zb, H * zb);
           break;
         }
         default:

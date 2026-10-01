@@ -68,10 +68,17 @@ describe.skipIf(!enabled)('render integration (real FFmpeg)', () => {
     project = await studio.setTranscript(dir, project, parseSidecarResult(fx, 'fixture'));
     project = (await studio.generate(dir, project)).project;
     // Force one of every transition type so all xfade paths are rendered.
-    const segs = project.timeline!.segments;
     const kinds = ['dissolve', 'slide-left', 'slide-up', 'zoom'] as const;
     let k = 0;
-    for (let i = 1; i < segs.length - 1 && k < kinds.length; i += 3) project = setTransition(project, segs[i].id, kinds[k++]);
+    const segs = project.timeline!.segments;
+    for (let i = 0; i < segs.length - 1 && k < kinds.length; i++) {
+      const next = setTransition(project, segs[i].id, kinds[k]);
+      if (next.timeline!.segments[i].transitionOut.kind === kinds[k]) {
+        project = next;
+        k++;
+        i++; // keep forced transitions on separate cuts
+      }
+    }
   }, 300_000);
 
   it('cancels cleanly without leaving files', async () => {

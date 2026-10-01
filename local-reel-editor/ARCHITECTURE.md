@@ -70,7 +70,7 @@ ASS captions, voice+SFX mix with peak-safety limiter, H.264/AAC 1080×1920) → 
   grid (`round(t·fps)`), so the video has exactly `round(voiceDuration·fps)` frames.
 - **Deterministic**: the planner seed is a hash of transcript, clip labels/durations, style and
   `variation`. Same inputs → same edit; **Variation** changes only the seed.
-- **Restraint by default**: hard cuts; transitions only at topic changes, ≥4.5 s apart (Dynamic);
+- **Smooth by default**: one continuous camera move per topic (velocity-matched in → linear → out sine easing across cuts); a soft transition at every topic change (dissolve, eased slide or zoom-through); short dissolves on jump cuts;
   zoom 100→108–112 % (max 115 %); SFX −22…−16 dB, ≥2.4 s apart, never the same file twice in a row.
 - **Low confidence never blocks**: weak sections get a guess (continuity / coverage) and a
   "Which clip matches this section?" card; answers are stored as `phraseOverrides`.

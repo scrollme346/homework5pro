@@ -9,8 +9,11 @@ export interface StylePreset {
   maxStatic: number;
   /** Probability that a shot gets a punch-in / motion move. */
   motionChance: number;
-  /** Max zoom used for punch-ins. */
+  /** Range of the slow continuous zoom over a topic (e.g. 1.05 → 100–105%). */
+  zoomMin: number;
   zoomMax: number;
+  /** Duration of the soft dissolve used for jump cuts inside a topic (0 = hard cut). */
+  softCut: number;
   /** Probability of a non-cut transition at a section (topic) change. */
   transitionChance: number;
   /** Minimum seconds between two non-cut transitions. */
@@ -33,9 +36,11 @@ export const PRESETS: Record<EditingStyle, StylePreset> = {
     shotMax: 5.5,
     maxStatic: 5,
     motionChance: 0.35,
-    zoomMax: 1.08,
-    transitionChance: 0.3,
-    transitionMinGap: 6,
+    zoomMin: 1.03,
+    zoomMax: 1.05,
+    softCut: 0.3,
+    transitionChance: 1,
+    transitionMinGap: 3,
     clickChance: 0.25,
     popChance: 0.15,
     sfxMinGap: 4,
@@ -43,29 +48,33 @@ export const PRESETS: Record<EditingStyle, StylePreset> = {
     allowImpact: false,
   },
   dynamic: {
-    shotMin: 1.1,
-    shotTarget: 2.1,
-    shotMax: 3.2,
+    shotMin: 1.8,
+    shotTarget: 3.2,
+    shotMax: 5,
     maxStatic: 3.5,
     motionChance: 0.55,
-    zoomMax: 1.12,
-    transitionChance: 0.25,
-    transitionMinGap: 4.5,
-    clickChance: 0.45,
-    popChance: 0.3,
-    sfxMinGap: 2.4,
-    jumpFactor: 1.8,
+    zoomMin: 1.05,
+    zoomMax: 1.09,
+    softCut: 0.25,
+    transitionChance: 1,
+    transitionMinGap: 2.5,
+    clickChance: 0.35,
+    popChance: 0.15,
+    sfxMinGap: 3,
+    jumpFactor: 1.4,
     allowImpact: true,
   },
   fast: {
-    shotMin: 0.8,
-    shotTarget: 1.4,
-    shotMax: 2.2,
+    shotMin: 1.1,
+    shotTarget: 2,
+    shotMax: 3,
     maxStatic: 2.5,
     motionChance: 0.65,
-    zoomMax: 1.15,
-    transitionChance: 0.3,
-    transitionMinGap: 3.5,
+    zoomMin: 1.07,
+    zoomMax: 1.12,
+    softCut: 0.15,
+    transitionChance: 1,
+    transitionMinGap: 2,
     clickChance: 0.55,
     popChance: 0.35,
     sfxMinGap: 1.8,
@@ -74,7 +83,7 @@ export const PRESETS: Record<EditingStyle, StylePreset> = {
   },
 };
 
-export const PLANNER_VERSION = 1;
+export const PLANNER_VERSION = 2;
 /** Sections with lower confidence are flagged for the "Which clip?" prompt. */
 export const REVIEW_THRESHOLD = 0.45;
 /** Cut lands slightly before the first word of the next phrase. */

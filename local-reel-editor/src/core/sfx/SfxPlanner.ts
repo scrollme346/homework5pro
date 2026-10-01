@@ -15,7 +15,7 @@ export const SFX_GAIN: Record<SfxCategory, [number, number]> = {
 };
 
 /** How far before the anchor time each SFX starts (whooshes lead into the cut). */
-const LEAD: Record<SfxCategory, number> = { click: 0.02, pop: 0.03, whoosh: 0.18, impact: 0.05 };
+const LEAD: Record<SfxCategory, number> = { click: 0.02, pop: 0.03, whoosh: 0.3, impact: 0.05 };
 
 /**
  * Places muted, sparse SFX: whoosh on slides/zoom transitions, pop on some
@@ -39,11 +39,10 @@ export function planSfx(
     const b = segments[i + 1];
     const tr = a.transitionOut.kind;
     if (tr === 'slide-left' || tr === 'slide-up' || tr === 'zoom') {
-      wanted.push({ t: a.endTime, category: 'whoosh', reason: `${tr} transition`, priority: 3 });
-    } else if (a.sectionId !== b.sectionId && tr === 'cut' && rng.chance(preset.popChance)) {
+      // Whoosh peaks in the middle of the move.
+      wanted.push({ t: a.endTime + a.transitionOut.duration / 2, category: 'whoosh', reason: `${tr} transition`, priority: 3 });
+    } else if (a.sectionId !== b.sectionId && rng.chance(preset.popChance)) {
       wanted.push({ t: b.startTime, category: 'pop', reason: 'new section', priority: 2 });
-    } else if (a.sectionId === b.sectionId && b.scaleStart - a.scaleEnd > 0.05 && rng.chance(0.25)) {
-      wanted.push({ t: b.startTime, category: 'pop', reason: 'punch-in accent', priority: 1 });
     }
   }
 

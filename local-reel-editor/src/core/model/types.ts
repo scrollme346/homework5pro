@@ -14,6 +14,8 @@ export type CaptionPosition = 'center' | 'lower-center' | 'upper-center';
 export type TransitionKind = 'cut' | 'dissolve' | 'slide-left' | 'slide-up' | 'zoom';
 export type SfxCategory = 'click' | 'pop' | 'whoosh' | 'impact';
 export type FitMode = 'cover' | 'blur-fit';
+/** Easing of a segment's camera move. Chained moves use in → linear → out so speed never jumps. */
+export type Ease = 'inOut' | 'in' | 'out' | 'linear';
 export type ExportQuality = 'fast' | 'high';
 export type WhisperModelSize = 'fast' | 'balanced' | 'accurate';
 
@@ -139,6 +141,8 @@ export interface Segment {
   userConfirmed?: boolean;
   /** Playback speed of the source (1 = real time). Planner only slows long holds slightly. */
   speed: number;
+  /** Easing of the zoom/pan move (default 'inOut'). */
+  ease?: Ease;
 }
 
 export interface CaptionEvent {

@@ -4,38 +4,52 @@ import type { Rng } from '../util/rng';
 
 export const TRANSITION_DURATION: Record<TransitionKind, number> = {
   cut: 0,
-  dissolve: 0.3,
-  'slide-left': 0.28,
-  'slide-up': 0.28,
-  zoom: 0.3,
+  dissolve: 0.45,
+  'slide-left': 0.5,
+  'slide-up': 0.5,
+  zoom: 0.45,
 };
 
-export function makeTransition(kind: TransitionKind): Transition {
-  return { kind, duration: TRANSITION_DURATION[kind] };
+export function makeTransition(kind: TransitionKind, duration?: number): Transition {
+  return { kind, duration: kind === 'cut' ? 0 : (duration ?? TRANSITION_DURATION[kind]) };
 }
 
+const fits = (a: Segment, b: Segment, d: number): boolean => a.endTime - a.startTime >= d * 1.5 && b.endTime - b.startTime >= d * 1.5;
+
 /**
- * Picks transitions. Default is a hard cut; only some topic changes get a
- * light dissolve/slide, spaced apart so transitions never feel busy.
+ * Smooth transitions:
+ *  - every topic change gets a soft transition (mostly dissolves, some eased
+ *    slides / zoom-throughs in Dynamic and Fast);
+ *  - a jump inside a topic (cut to a later moment of the same recording)
+ *    gets a short dissolve so it never reads as a glitch;
+ *  - continuous footage between shots stays seamless (no transition needed).
  */
 export function planTransitions(segments: Segment[], style: EditingStyle, preset: StylePreset, rng: Rng): void {
-  let lastAt = -Infinity;
+  let lastBig = -Infinity;
+  let lastKind: TransitionKind = 'cut';
   for (let i = 0; i < segments.length - 1; i++) {
     const a = segments[i];
     const b = segments[i + 1];
-    if (a.sectionId === b.sectionId) continue; // inside a topic: always cut
-    const t = a.endTime;
-    if (t - lastAt < preset.transitionMinGap) continue;
-    if (!rng.chance(preset.transitionChance)) continue;
-    const kind: TransitionKind =
-      style === 'minimal'
-        ? 'dissolve'
-        : rng.pick<TransitionKind>(['dissolve', 'dissolve', 'slide-left', 'slide-left', 'slide-up', 'zoom']);
-    const tr = makeTransition(kind);
-    // Transition must fit comfortably inside both shots.
-    if (a.endTime - a.startTime < tr.duration * 2.5 || b.endTime - b.startTime < tr.duration * 2.5) continue;
-    a.transitionOut = tr;
-    b.transitionIn = tr;
-    lastAt = t;
+    let tr: Transition | null = null;
+    if (a.sectionId !== b.sectionId) {
+      let kind: TransitionKind = 'dissolve';
+      if (style !== 'minimal' && a.endTime - lastBig >= preset.transitionMinGap * 2) {
+        const options: TransitionKind[] = ['slide-left', 'slide-left', 'zoom', 'slide-up'].filter((k) => k !== lastKind) as TransitionKind[];
+        if (rng.chance(style === 'fast' ? 0.6 : 0.45)) kind = rng.pick(options);
+      }
+      tr = makeTransition(kind);
+      if (!fits(a, b, tr.duration)) tr = makeTransition('dissolve', Math.min(0.3, (Math.min(a.endTime - a.startTime, b.endTime - b.startTime)) / 1.6));
+      if (kind !== 'dissolve') {
+        lastBig = a.endTime;
+        lastKind = kind;
+      }
+    } else {
+      const jump = a.sourceClip !== b.sourceClip || Math.abs(a.sourceEnd - b.sourceStart) > 0.05;
+      if (jump && preset.softCut > 0) tr = makeTransition('dissolve', preset.softCut);
+    }
+    if (tr && tr.duration >= 0.1 && fits(a, b, tr.duration)) {
+      a.transitionOut = tr;
+      b.transitionIn = tr;
+    }
   }
 }
