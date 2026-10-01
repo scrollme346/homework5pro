@@ -33,6 +33,8 @@ export interface StudioPaths {
   transcribeScript: string;
   /** Directory with bundled ffmpeg binaries, if shipped. */
   bundledBinDir?: string;
+  /** Bundled Python executable with faster-whisper preinstalled, if shipped. */
+  bundledPython?: string;
 }
 
 export interface DependencyStatus {
@@ -58,7 +60,16 @@ export class Studio {
 
   constructor(readonly paths: StudioPaths) {
     this.projects = new ProjectManager(paths.projectsDir);
-    this.speech = new TranscriptionEngine({ baseDir: join(paths.dataDir, 'speech'), script: paths.transcribeScript });
+    this.speech = this.makeSpeech();
+  }
+
+  private makeSpeech(): TranscriptionEngine {
+    return new TranscriptionEngine({
+      baseDir: join(this.paths.dataDir, 'speech'),
+      script: this.paths.transcribeScript,
+      pythonPath: this.settings?.pythonPath,
+      bundledPython: this.paths.bundledPython,
+    });
   }
 
   private get settingsFile(): string {
@@ -71,7 +82,7 @@ export class Studio {
     } catch {
       this.settings = { ...DEFAULT_SETTINGS };
     }
-    this.speech = new TranscriptionEngine({ baseDir: join(this.paths.dataDir, 'speech'), script: this.paths.transcribeScript, pythonPath: this.settings.pythonPath });
+    this.speech = this.makeSpeech();
     return this.settings;
   }
 
@@ -81,7 +92,7 @@ export class Studio {
     await writeFile(this.settingsFile, JSON.stringify(this.settings, null, 2), 'utf8');
     if ('ffmpegPath' in patch || 'ffprobePath' in patch) this.tools = null;
     if ('pythonPath' in patch) {
-      this.speech = new TranscriptionEngine({ baseDir: join(this.paths.dataDir, 'speech'), script: this.paths.transcribeScript, pythonPath: this.settings.pythonPath });
+      this.speech = this.makeSpeech();
     }
     return this.settings;
   }

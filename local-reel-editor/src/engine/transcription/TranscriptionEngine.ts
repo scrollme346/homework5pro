@@ -29,6 +29,8 @@ export interface TranscriptionPaths {
   script: string;
   /** Optional explicit python executable (settings). */
   pythonPath?: string;
+  /** Python shipped inside the installer with faster-whisper preinstalled. */
+  bundledPython?: string;
 }
 
 function execText(bin: string, args: string[], timeout = 20_000): Promise<{ ok: boolean; out: string }> {
@@ -51,6 +53,16 @@ export class TranscriptionEngine {
 
   get modelsDir(): string {
     return join(this.paths.baseDir, 'models');
+  }
+
+  /** True when the installer ships its own Python + faster-whisper (no install step). */
+  get isBundled(): boolean {
+    return !!this.paths.bundledPython && existsSync(this.paths.bundledPython);
+  }
+
+  /** Python that runs the sidecar: the bundled runtime if present, else the private venv. */
+  private get enginePython(): string {
+    return this.isBundled ? this.paths.bundledPython! : this.venvPython;
   }
 
   private get venvPython(): string {
@@ -82,10 +94,10 @@ export class TranscriptionEngine {
   }
 
   async status(): Promise<SpeechEngineStatus> {
-    const sys = await this.findSystemPython();
+    const sys = this.isBundled ? { path: this.paths.bundledPython!, version: 'bundled' } : await this.findSystemPython();
     let engineVersion: string | null = null;
-    if (existsSync(this.venvPython)) {
-      const r = await execText(this.venvPython, [this.paths.script, 'check'], 60_000);
+    if (existsSync(this.enginePython)) {
+      const r = await execText(this.enginePython, [this.paths.script, 'check'], 60_000);
       const m = /"faster_whisper":\s*"([^"]+)"/.exec(r.out);
       engineVersion = r.ok && m ? m[1] : null;
     }
@@ -191,7 +203,7 @@ export class TranscriptionEngine {
     onProgress: (fraction: number) => void,
     signal?: AbortSignal,
   ): Promise<Transcript> {
-    if (!existsSync(this.venvPython)) {
+    if (!existsSync(this.enginePython)) {
       throw new UserFacingError('Движок распознавания речи ещё не установлен. Откройте «Компоненты» и нажмите «Установить».', undefined, 'engine-missing');
     }
     if (!this.hasModel(size)) {
@@ -213,7 +225,7 @@ export class TranscriptionEngine {
 
   private runSidecar(args: string[], onEvent: (e: Record<string, unknown>) => void, signal?: AbortSignal): Promise<Record<string, unknown>[]> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.venvPython, [this.paths.script, ...args], {
+      const child = spawn(this.enginePython, [this.paths.script, ...args], {
         windowsHide: true,
         env: { ...process.env, PYTHONIOENCODING: 'utf-8', HF_HUB_DISABLE_TELEMETRY: '1' },
       });

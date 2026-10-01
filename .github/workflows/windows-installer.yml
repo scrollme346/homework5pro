@@ -1,0 +1,87 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [ccr-b01c76c8-s1lvh3, main, master]
+    paths: ['local-reel-editor/**', '.github/workflows/windows-installer.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: local-reel-editor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: local-reel-editor/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Bundle FFmpeg
+        run: |
+          $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+          $bin = Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          New-Item -ItemType Directory -Force vendor/ffmpeg/win | Out-Null
+          Copy-Item $bin.FullName vendor/ffmpeg/win/
+          Copy-Item (Join-Path $bin.DirectoryName ffprobe.exe) vendor/ffmpeg/win/
+          vendor/ffmpeg/win/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+
+      - name: Bundle portable Python with faster-whisper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $rel = Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest
+          $asset = $rel.assets | Where-Object { $_.name -match '^cpython-3\.11\.\d+\+\d+-x86_64-pc-windows-msvc-install_only\.tar\.gz$' } | Select-Object -First 1
+          if (-not $asset) { throw 'portable Python asset not found' }
+          Write-Host "Using $($asset.name)"
+          $tgz = "$env:RUNNER_TEMP\python.tar.gz"
+          Invoke-WebRequest $asset.browser_download_url -OutFile $tgz
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\py" | Out-Null
+          tar -xzf $tgz -C "$env:RUNNER_TEMP\py"
+          New-Item -ItemType Directory -Force vendor/python | Out-Null
+          Move-Item "$env:RUNNER_TEMP\py\python" vendor/python/win
+          $py = "vendor/python/win/python.exe"
+          & $py -m pip install --no-warn-script-location --disable-pip-version-check faster-whisper==1.2.1
+          & $py python/transcribe.py check
+          # Trim size: tests, caches and pip are not needed at runtime.
+          Get-ChildItem vendor/python/win -Recurse -Directory -Include __pycache__,tests,test | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Unit tests
+        run: npx vitest run tests/text.test.ts tests/planner.test.ts tests/captions.test.ts tests/render.test.ts tests/ops.test.ts
+
+      - name: Build installer
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalReelEditor-Windows
+          path: local-reel-editor/dist/*.exe
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-build-${{ github.run_number }}
+          name: Local Reel Editor (Windows) — build ${{ github.run_number }}
+          prerelease: true
+          files: local-reel-editor/dist/*.exe
+          body: |
+            Скачайте `LocalReelEditor-Setup-*.exe` ниже и запустите.
+            Windows может показать «Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае» (установщик пока без цифровой подписи).

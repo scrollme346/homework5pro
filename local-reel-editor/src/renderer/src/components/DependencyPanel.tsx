@@ -118,7 +118,9 @@ export function DependencyPanel({ onClose, reason }: { onClose: () => void; reas
             title="Распознавание речи (Whisper, локально)"
             detail={
               deps.speechEngine.installed
-                ? `faster-whisper ${deps.speechEngine.version} установлен в отдельное окружение приложения.`
+                ? deps.python.version === 'bundled'
+                  ? `faster-whisper ${deps.speechEngine.version} встроен в приложение.`
+                  : `faster-whisper ${deps.speechEngine.version} установлен в отдельное окружение приложения.`
                 : deps.python.found
                   ? `Будет установлен faster-whisper в отдельное окружение (Python ${deps.python.version}). Нужен интернет один раз.`
                   : 'Для локального Whisper нужен Python 3.9+. Установите его с python.org (галочка «Add to PATH» на Windows) и нажмите «Проверить снова».'

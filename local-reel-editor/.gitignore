@@ -4,3 +4,5 @@ dist/
 .cache/
 *.log
 tests/.tmp/
+vendor/ffmpeg/*/
+vendor/python/

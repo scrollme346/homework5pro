@@ -17,7 +17,8 @@
     "cli": "tsx cli/reel.ts",
     "dist": "electron-vite build && electron-builder",
     "e2e": "electron-vite build && xvfb-run -a -s \"-screen 0 1440x900x24\" tsx tests/e2e/app.e2e.ts",
-    "test:media": "tsx scripts/make-test-media.ts"
+    "test:media": "tsx scripts/make-test-media.ts",
+    "dist:win": "electron-vite build && electron-builder --win --publish never"
   },
   "devDependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -65,11 +66,22 @@
       },
       {
         "from": "python",
-        "to": "python"
+        "to": "python",
+        "filter": [
+          "*.py"
+        ]
       },
       {
         "from": "vendor/ffmpeg/${os}",
         "to": "bin",
+        "filter": [
+          "**/*",
+          "!README.md"
+        ]
+      },
+      {
+        "from": "vendor/python/${os}",
+        "to": "python-runtime",
         "filter": [
           "**/*"
         ]
@@ -83,13 +95,26 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "linux": {
       "target": [
         "AppImage"
       ]
-    }
-  }
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "LocalReelEditor-Setup-${version}.exe",
+      "shortcutName": "Local Reel Editor"
+    },
+    "publish": null
+  },
+  "author": "Local Reel Editor"
 }

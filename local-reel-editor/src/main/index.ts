@@ -223,6 +223,7 @@ app.whenReady().then(async () => {
     assetsDir: join(res, 'assets'),
     transcribeScript: join(res, 'python', 'transcribe.py'),
     bundledBinDir: join(res, 'bin'),
+    bundledPython: join(res, 'python-runtime', process.platform === 'win32' ? 'python.exe' : 'bin/python3'),
   });
   await studio.loadSettings();
   await studio.ensureUserSfxFolders().catch(() => undefined);
