@@ -188,9 +188,13 @@ export class Studio {
     return this.projects.save(dir, { ...project, transcript });
   }
 
-  async generate(dir: string, project: Project, opts: { variation?: boolean } = {}): Promise<{ project: Project; qa: QaIssue[] }> {
+  async generate(
+    dir: string,
+    project: Project,
+    opts: { variation?: boolean; onStage?: Parameters<typeof planProject>[3] } = {},
+  ): Promise<{ project: Project; qa: QaIssue[] }> {
     const p = opts.variation ? { ...project, variation: project.variation + 1 } : project;
-    const { timeline, qa } = planProject(p, await this.sfxLibrary());
+    const { timeline, qa } = planProject(p, await this.sfxLibrary(), undefined, opts.onStage);
     const all = [...checkAudio(p), ...qa];
     const saved = await this.projects.save(dir, { ...p, timeline, qa: all });
     return { project: saved, qa: all };
@@ -219,5 +223,25 @@ export class Studio {
       onProgress,
     });
     return this.projects.save(dir, { ...project, lastExport: { path: outputPath, at: new Date().toISOString() } });
+  }
+
+  /** Re-creates proxies/thumbnails that are missing (e.g. cache deleted) so preview stays fast. */
+  async ensureProxies(dir: string, project: Project, signal?: AbortSignal): Promise<Project> {
+    const tools = await this.getTools();
+    let changed = false;
+    const clips = [];
+    for (const c of project.clips) {
+      if (c.proxy && existsSync(c.proxy) && c.thumbnail && existsSync(c.thumbnail)) {
+        clips.push(c);
+        continue;
+      }
+      if (!existsSync(c.path)) {
+        throw new UserFacingError(`Исходный клип «${c.label}» не найден. Возможно, файл был перемещён.`, c.path, 'clip-missing');
+      }
+      const fresh = await importClip(tools, c.path, this.projects.cacheDir(dir), signal);
+      clips.push({ ...c, proxy: fresh.proxy, thumbnail: fresh.thumbnail, activity: c.activity ?? fresh.activity });
+      changed = true;
+    }
+    return changed ? this.projects.save(dir, { ...project, clips }) : project;
   }
 }

@@ -83,7 +83,9 @@ async function main() {
   }
 
   const t0 = Date.now();
-  let { project, dir } = await studio.projects.create(arg('name') ?? 'CLI Reel');
+  const created = await studio.projects.create(arg('name') ?? 'CLI Reel');
+  const dir = created.dir;
+  let project = created.project;
   project = { ...project, editingStyle: (arg('style') as EditingStyle) ?? 'dynamic' };
   if (arg('quality')) project.render = { ...project.render, quality: arg('quality') as 'fast' | 'high' };
   console.log(`Project: ${dir}`);

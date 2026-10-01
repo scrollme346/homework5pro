@@ -15,7 +15,9 @@
     "test": "vitest run",
     "gen:sfx": "tsx scripts/gen-sfx.ts",
     "cli": "tsx cli/reel.ts",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "e2e": "electron-vite build && xvfb-run -a -s \"-screen 0 1440x900x24\" tsx tests/e2e/app.e2e.ts",
+    "test:media": "tsx scripts/make-test-media.ts"
   },
   "devDependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -28,6 +30,7 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.1",
     "eslint": "^9.39.5",
+    "playwright": "1.56",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.23.15",
@@ -37,11 +40,56 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "immer": "^11.1.18",
     "lucide-react": "^1.49.0",
     "opentype.js": "^2.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "snowball-stemmers": "^0.6.0",
     "zustand": "^5.0.15"
+  },
+  "build": {
+    "appId": "app.localreeleditor",
+    "productName": "Local Reel Editor",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets"
+      },
+      {
+        "from": "python",
+        "to": "python"
+      },
+      {
+        "from": "vendor/ffmpeg/${os}",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.video"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    }
   }
 }

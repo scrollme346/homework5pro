@@ -20,6 +20,8 @@ export interface PlannerInput {
   sfxLibrary: SfxLibrary;
   phraseOverrides?: Record<string, string>;
   measure?: MeasureText;
+  /** Called as the planner moves through its steps (for the Generate screen). */
+  onStage?: (stage: 'understanding' | 'story' | 'captions' | 'motion' | 'sound') => void;
 }
 
 export interface PlannerOutput {
@@ -34,7 +36,8 @@ export function plannerSeed(input: Pick<PlannerInput, 'transcript' | 'clips' | '
     input.duration.toFixed(2),
     input.style,
     input.variation,
-    ...input.clips.map((c) => `${c.id}:${c.label}:${c.probe.durationSec.toFixed(2)}`),
+    // Labels + durations (not random ids) so re-importing the same files gives the same edit.
+    ...input.clips.map((c) => `${c.label}:${c.probe.durationSec.toFixed(2)}`),
   ].join('|');
   return hashString(key);
 }
@@ -51,6 +54,7 @@ export function planMontage(input: PlannerInput): PlannerOutput {
   const words = input.transcript.words;
   const clipMap = new Map(input.clips.map((c) => [c.id, c]));
 
+  input.onStage?.('understanding');
   const phrases = splitPhrases(words);
   const assignments = assignClips(phrases, input.clips, input.phraseOverrides);
   let sections = buildSections(phrases, assignments, input.duration, seed);
@@ -71,6 +75,7 @@ export function planMontage(input: PlannerInput): PlannerOutput {
     ];
   }
 
+  input.onStage?.('story');
   const cursors = new Map<string, number>();
   const segments = [];
   for (let i = 0; i < sections.length; i++) {
@@ -81,9 +86,12 @@ export function planMontage(input: PlannerInput): PlannerOutput {
     segments.push(...segs);
   }
 
+  input.onStage?.('motion');
   planTransitions(segments, input.style, preset, rng);
+  input.onStage?.('sound');
   const sfx = planSfx(segments, sections, clipMap, input.sfxLibrary, preset, rng, seed, input.duration);
   attachSfxToSegments(segments, sfx);
+  input.onStage?.('captions');
   const captions = buildCaptions(words, input.captionStyle, seed, input.measure);
 
   const timeline: Timeline = {
@@ -98,7 +106,12 @@ export function planMontage(input: PlannerInput): PlannerOutput {
   return { timeline, qa };
 }
 
-export function planProject(project: Project, sfxLibrary: SfxLibrary, measure?: MeasureText): PlannerOutput {
+export function planProject(
+  project: Project,
+  sfxLibrary: SfxLibrary,
+  measure?: MeasureText,
+  onStage?: PlannerInput['onStage'],
+): PlannerOutput {
   if (!project.voice) throw new Error('Сначала добавьте voice-over.');
   if (!project.transcript) throw new Error('Сначала нужна транскрипция голоса.');
   if (!project.clips.length) throw new Error('Добавьте хотя бы один видеоклип.');
@@ -112,5 +125,6 @@ export function planProject(project: Project, sfxLibrary: SfxLibrary, measure?: 
     sfxLibrary,
     phraseOverrides: project.phraseOverrides,
     measure,
+    onStage,
   });
 }

@@ -177,11 +177,11 @@ export function buildFinalJob(project: Project, opts: RenderPlanOptions): Ffmpeg
     const tr = segs[i - 1].transitionOut;
     const out = `[v${i}]`;
     if (tr.kind === 'cut') {
-      parts.push(`${prev}[n${i}]concat=n=2:v=1:a=0${out}`);
+      parts.push(`${prev}[n${i}]concat=n=2:v=1:a=0,settb=1/${fps}${out}`);
     } else {
       const startFrame = segmentFrames(segs[i], fps).start;
       const d = Math.round(tr.duration * fps) / fps;
-      parts.push(`${prev}[n${i}]xfade=transition=${XFADE[tr.kind]}:duration=${n4(d)}:offset=${n4(startFrame / fps)}${out}`);
+      parts.push(`${prev}[n${i}]xfade=transition=${XFADE[tr.kind]}:duration=${n4(d)}:offset=${n4(startFrame / fps)},settb=1/${fps}${out}`);
     }
     prev = out;
   }
